@@ -57,14 +57,6 @@ jobs:
           fail-on-vulnerable: false
           restore: false
 
-      - name: Scan fixture that treats warnings as errors
-        id: warnings-as-errors
-        uses: ./
-        with:
-          path: test/fixtures/warnings-as-errors/WarningsAsErrors.csproj
-          suppressions-file: test/fixtures/warnings-as-errors/nuget-audit-suppressions.json
-          fail-on-vulnerable: false
-
       - name: Check results
         shell: pwsh
         env:
@@ -73,7 +65,6 @@ jobs:
           SUPPRESSED_COUNT: ${{ steps.failing.outputs.suppressed-count }}
           REPORT_PATH: ${{ steps.report-only.outputs.report-path }}
           FINDINGS_PATH: ${{ steps.report-only.outputs.findings-path }}
-          WARNINGS_AS_ERRORS_FINDINGS_PATH: ${{ steps.warnings-as-errors.outputs.findings-path }}
         run: |
           $errors = @()
           if ($env:FAILING_OUTCOME -ne 'failure') { $errors += "Expected the scan to fail, got '$env:FAILING_OUTCOME'." }
@@ -83,10 +74,24 @@ jobs:
           $newtonsoft = $findings | Where-Object { $_.Package -eq 'Newtonsoft.Json' -and $_.Project -eq 'test/fixtures/sample/App/App.csproj' }
           if (-not $newtonsoft) { $errors += 'Expected Newtonsoft.Json in App/App.csproj among the findings.' }
           if (-not (Select-String -LiteralPath $env:REPORT_PATH -Pattern '### Unused suppressions' -Quiet)) { $errors += 'Expected the unused suppression in the report.' }
-          $warningsAsErrorsFindings = Get-Content -Raw $env:WARNINGS_AS_ERRORS_FINDINGS_PATH | ConvertFrom-Json
-          if (-not ($warningsAsErrorsFindings | Where-Object { $_.Package -eq 'Newtonsoft.Json' })) { $errors += 'Expected Newtonsoft.Json in the warnings-as-errors fixture findings.' }
           if ($errors) { $errors | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
           Write-Host 'Self-test passed.'
+
+      - name: Scan fixture that treats warnings as errors
+        id: warnings-as-errors
+        uses: ./
+        with:
+          path: test/fixtures/warnings-as-errors/WarningsAsErrors.csproj
+          suppressions-file: test/fixtures/warnings-as-errors/nuget-audit-suppressions.json
+          fail-on-vulnerable: false
+
+      - name: Check warnings-as-errors findings
+        shell: pwsh
+        env:
+          FINDINGS_PATH: ${{ steps.warnings-as-errors.outputs.findings-path }}
+        run: |
+          $findings = Get-Content -Raw $env:FINDINGS_PATH | ConvertFrom-Json
+          if (-not ($findings | Where-Object { $_.Package -eq 'Newtonsoft.Json' })) { Write-Host '::error::Expected Newtonsoft.Json in the warnings-as-errors fixture findings.'; exit 1 }
 
   invalid-suppressions:
     name: Invalid suppressions fail
